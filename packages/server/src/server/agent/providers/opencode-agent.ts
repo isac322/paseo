@@ -3045,6 +3045,7 @@ class OpenCodeAgentSession implements AgentSession {
           { err: error, sessionId: this.sessionId, turnId, reason },
           "OpenCode session.abort rejected",
         );
+        throw error;
       });
     const trackedAbortPromise = abortPromise.finally(() => {
       if (this.pendingAbortPromise === trackedAbortPromise) {
@@ -3079,11 +3080,15 @@ class OpenCodeAgentSession implements AgentSession {
   ): Promise<{ turnId: string }> {
     if (this.activeForegroundTurnId) {
       if (this.activeForegroundTurnSource === "autonomous") {
-        // A direct Paseo prompt owns the foreground; close the autonomous run first.
-        this.finishForegroundTurn(
-          { type: "turn_completed", provider: "opencode", usage: undefined },
-          this.activeForegroundTurnId,
-        );
+        const autonomousTurnId = this.activeForegroundTurnId;
+        await this.beginSessionAbort(autonomousTurnId, "direct_prompt_handoff");
+        if (this.activeForegroundTurnId === autonomousTurnId) {
+          this.suppressTerminalUntilNextUserMessage = true;
+          this.finishForegroundTurn(
+            { type: "turn_canceled", provider: "opencode", reason: "interrupted" },
+            autonomousTurnId,
+          );
+        }
       } else {
         throw new Error("A foreground turn is already active");
       }
